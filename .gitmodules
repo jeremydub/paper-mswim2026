@@ -1,0 +1,11 @@
+[submodule "dependencies/RIOT"]
+	path = dependencies/RIOT
+	url = https://github.com/jeremydub/RIOT
+	branch = mswim2026
+[submodule "dependencies/contiki-ng"]
+	path = dependencies/contiki-ng
+	url = https://github.com/contiki-ng/contiki-ng
+[submodule "dependencies/embassy"]
+	path = dependencies/embassy
+	url = https://github.com/jeremydub/embassy
+	branch = mswim2026
