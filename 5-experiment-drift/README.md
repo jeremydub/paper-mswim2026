@@ -1,16 +1,58 @@
- Clock-drift Experiment
---
+# 5. Clock-Drift Comparison
 
-The experiment uses a topology of two nodes : a UDP client sending 360 datagrams using a 30s send interval; a UDP server receiving the datagram. The client print a log message just before sending the datagram and the server prints a log message when the application receives the datagram. This experiment yields a 3-hour run per backend. A DriftListener records, for each received UDP message, the difference between the framework-reported timestamp and the wall-clock time expected from the send schedule. This accumulated drift quantifies how faithfully each backend’s clock tracks real time over long experiments, a practical concern for any study that correlates events across nodes or across backends.
+*Not part of the paper.* Quantifies how faithfully each backend's clock tracks
+real time over a multi-hour run — a practical concern for any study that
+correlates events across nodes or across backends.
 
-Because the host clock (NTP-synchronised, or a sub-µs monotonic kernel clock for Local) serves as the reference, the measured drift reflects the cumulative "disagreement" between the device timer and the host wall-clock along the entire serial path, not an isolated oscillator characterisation.
+## Experiment
 
-<div align=center><img src="./fig-drifts.png" alt="Host-vs-device clock drift over 3 h." width="75%"/></div>
+A two-node UDP topology: the client sends one datagram every 30s (360 sends,
++-3h per backend) and logs each send; the server logs each reception. A
+`DriftListener` compares every send's framework-reported timestamp against the
+wall-clock time expected from the send cadence and accumulates the difference.
 
-- **Virtual backends.** : Figure 3a contrasts the Cooja and Renode results. Both Cooja configurations (Cooja Mote and Zolertia Z1) exhibit effectively zero drift (final offsets of 0.00 ms and 0.35 ms respectively), confirming that Cooja’s discrete-event scheduler advances virtual time deterministically. The Renode results are markedly different. Both CC2538based platforms accumulate  +- 1414 ms of drift over three hours, following a distinctive staircase pattern: a sudden jump of +- 125 ms occurs every +-32 packets (i.e. every +-960 s), with a slow linear decrease of +-0.2 ms per packet between jumps. Both platforms produce virtually identical traces, confirming that the drift originates in Renode’s emulation of the CC2538 sleep timer peripheral, the clock source for Contiki-NG’s CLOCK_SECOND on this SoC, rather than in any platformspecific code path. Unlike Cooja, whose virtual clock is fully decoupled from the host, Renode emulates peripheral clocks at a configurable frequency ratio that can introduce measurable artefacts over long runs.
+The host clock (NTP-synchronised, or a sub-µs monotonic kernel clock for Local)
+is the reference, so the measured drift reflects the cumulative disagreement
+between the device timer and the host along the whole serial path, not an
+isolated oscillator characterisation.
 
-- **Hardware backends.**: Figure 3b reveals two behavioural groups. The two nRF52840-DK curves (Local and FIT IoT-LAB) show a near-linear positive drift, reaching 182 ms and 186 ms respectively. In Contiki-NG the nRF52840 system clock is derived from the on-chip RTC peripheral clocked by the 32.768 kHz LFXO crystal. The close end drifts (<4 ms) between two different boards on two different backends confirms that the framework’s abstraction layer does not itself inject timing distortion; the small residual is attributable to crystal unit-to-unit variation and serial-path jitter (USB locally vs. testbed gateway for FIT IoT-LAB).
-The Zolertia Firefly (CC2538, Local) accumulates only 44 ms (roughly four times less than the nRF52840) because the CC2538’s Contiki-NG port uses the Sleep Timer counter driven by the 32.768 kHz XOSC for elapsed-tick bookkeeping.
-The IoT-LAB M3 (STM32F103, FIT IoT-LAB) reaches 78 ms with a pronounced sawtooth: drift decreases by +-2 ms per packet for six consecutive packets, then snaps back by +-14 ms, repeating every seven packets (+-210 s). The STM32F103’s Contiki-NG port derives CLOCK_SECOND from SysTick interrupts at 128 Hz; between housekeeping events the counter accumulates small errors that are corrected on the next cycle, producing the regular ramp-and-snap pattern.
+Variants (Contiki-NG only): CoojaMote (driftless simulation), Zolertia Z1 (MSPSim
+emulation), Firefly (Renode and local hardware), IoT-LAB M3 (FIT IoT-LAB
+Grenoble), nRF52840-DK (FIT IoT-LAB Saclay).
 
-- **Implications.**: The experiment validates that the framework faithfully exposes each backend’s native timing behaviour: Cooja’s zero drift, Renode’s periodic staircase, the nRF52840’s linear slope, and the M3’s sawtooth are all intrinsic to the respective backend and visible precisely because the framework does not interpose a normalisation layer. The practical guidance is: Cooja provides a deterministic timeline for protocol correctness testing; Renode offers fasterthan-real-time execution but cannot be trusted for sub-second timing analysis on CC2538 targets; and hardware backends expose real-world oscillator behaviour that must be accounted for in timing-critical evaluations.
+<div align=center><img src="./fig-drifts.png" alt="Host-vs-device clock drift over 3 h." width="65%"/></div>
+
+## Findings
+
+- **Virtual backends.** Both Cooja configurations show effectively zero drift
+  (0.00 ms and 0.35 ms), confirming Cooja's discrete-event scheduler advances
+  virtual time deterministically. Renode differs sharply: both CC2538 platforms
+  accumulate +-1414 ms over 3h in a staircase (-+125 ms every +-32 packets, with a
+  slow -+0.2 ms/packet decline between jumps), and the two traces are nearly
+  identical — the drift originates in Renode's emulation of the CC2538 sleep-timer
+  peripheral, not in platform-specific code.
+- **Hardware backends.** The two nRF52840-DK curves (Local, FIT IoT-LAB) drift
+  near-linearly to 182 ms and 186 ms (RTC clocked by the 32.768 kHz LFXO); the
+  <4 ms spread between different boards on different backends confirms the
+  framework adds no timing distortion. The Firefly (CC2538) reaches only 44 ms
+  (Sleep Timer driven by the 32.768 kHz XOSC); the IoT-LAB M3 (STM32F103) reaches
+  78 ms with a sawtooth from SysTick housekeeping at 128 Hz.
+- **Implications.** The framework faithfully exposes each backend's *native*
+  timing behaviour because it does not interpose a normalisation layer. Practical
+  guidance: Cooja gives a deterministic timeline for correctness testing; Renode
+  runs faster than real time but cannot be trusted for sub-second timing on CC2538
+  targets; hardware exposes real oscillator behaviour that must be accounted for
+  in timing-critical evaluations.
+
+## Layout
+
+- `experiment_drift.py` — the variants and the `DriftListener` (writes CSV).
+- `fig-drifts.png` — the figure above.
+
+## Running
+
+```bash
+python experiment_drift.py
+```
+
+Writes one `(request, observed, expected, drift)` CSV per run under `data/`.
